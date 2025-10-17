@@ -1,0 +1,64 @@
+name: Build ESP32 Firmware
+
+on:
+  push:
+    tags: ['v*']  # Trigger on version tags like v1.0.0, v1.0.1, etc.
+  workflow_dispatch:  # Allow manual triggers
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+        
+    - name: Install PlatformIO
+      run: |
+        python -m pip install --upgrade pip
+        pip install platformio
+        
+    - name: Build firmware
+      run: pio run
+      
+    - name: Extract version from source code
+      id: get_version
+      run: |
+        # Extract FIRMWARE_VERSION value from main.cpp
+        VERSION=$(grep -oP 'FIRMWARE_VERSION\s*=\s*"\K[^"]+' src/main.cpp)
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Detected version: $VERSION"
+        
+    - name: Create firmware directory
+      run: mkdir -p firmware
+      
+    - name: Create version file
+      run: echo "${{ steps.get_version.outputs.version }}" > firmware/version.txt
+      
+    - name: Copy firmware binary
+      run: cp .pio/build/esp32dev/firmware.bin firmware/
+      
+    - name: Setup Git identity
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        
+    - name: Commit and push firmware files
+      run: |
+        git add firmware/
+        git commit -m "Build firmware version ${{ steps.get_version.outputs.version }}"
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Upload firmware as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: firmware-${{ steps.get_version.outputs.version }}
+        path: firmware/
+        retention-days: 30
